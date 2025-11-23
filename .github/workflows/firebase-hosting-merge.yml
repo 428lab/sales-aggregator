@@ -14,7 +14,7 @@ jobs:
       - run: npm ci && npm run build:static
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          repoToken: ${{ secrets.FIREBASE_SECRET }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SALES_AGGREGATOR_6C846 }}
           channelId: live
           projectId: sales-aggregator-6c846
