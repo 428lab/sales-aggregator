@@ -21,6 +21,13 @@ export interface Item {
   id: string;
   name: string;
   variants: ItemVariant[];
+  archived?: boolean;
+  // 販路ごとの設定（任意）
+  platformSettings?: {
+    platformId: string;
+    feePercentage: number;
+    shippingFee: number;
+  }[];
 }
 
 interface ItemFormModalProps {
@@ -33,14 +40,17 @@ interface ItemFormModalProps {
 export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: ItemFormModalProps) {
   const [name, setName] = useState("");
   const [variants, setVariants] = useState<ItemVariant[]>([{ type: "", price: 0 }]);
+  const [archived, setArchived] = useState(false);
 
   useEffect(() => {
     if (item) {
       setName(item.name);
       setVariants(item.variants.length > 0 ? item.variants : [{ type: "", price: 0 }]);
+      setArchived(Boolean(item.archived));
     } else {
       setName("");
       setVariants([{ type: "", price: 0 }]);
+      setArchived(false);
     }
   }, [item, open]);
 
@@ -69,7 +79,8 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
     onSubmit({
       id: item?.id,
       name,
-      variants: variants.filter(v => v.type && v.price > 0),
+      variants: variants.filter((v) => v.type && v.price > 0),
+      archived,
     });
     onOpenChange(false);
   };
@@ -95,6 +106,17 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
                 required
                 data-testid="input-item-name"
               />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border border-gray-300"
+                  checked={archived}
+                  onChange={(e) => setArchived(e.target.checked)}
+                />
+                取り扱い終了（新規の売上入力には表示しません）
+              </Label>
             </div>
             
             <div className="space-y-3">

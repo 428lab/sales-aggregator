@@ -1,25 +1,30 @@
-import { useState } from "react";
+"use client";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { LogIn } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 
-//todo: Replace with real Firebase Google authentication
-interface LoginPageProps {
-  onLogin: () => void;
-}
-
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage() {
   const { toast } = useToast();
+  const { loginWithGoogle } = useAuth();
 
-  const handleGoogleSignIn = () => {
-    //todo: Implement real Firebase signInWithPopup with googleProvider
-    console.log("Mock Google login");
-    toast({
-      title: "ログイン成功",
-      description: "ようこそ",
-    });
-    onLogin();
+  const handleGoogleSignIn = async () => {
+    try {
+      await loginWithGoogle();
+      toast({
+        title: "ログイン成功",
+        description: "ようこそ",
+      });
+    } catch (error) {
+      console.error("Google login error", error);
+      toast({
+        title: "ログインに失敗しました",
+        description: "時間をおいて再度お試しください",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -30,9 +35,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <CardDescription>Googleアカウントでログインしてください</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button 
-            onClick={handleGoogleSignIn} 
-            className="w-full" 
+          <Button
+            onClick={handleGoogleSignIn}
+            className="w-full"
             size="lg"
             data-testid="button-google-login"
           >
@@ -47,3 +52,4 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     </div>
   );
 }
+

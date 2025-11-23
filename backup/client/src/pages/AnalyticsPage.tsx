@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -7,29 +8,125 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BarChart3, TrendingUp, ShoppingCart, DollarSign } from "lucide-react";
+import { BarChart3, ShoppingCart, DollarSign, Loader2 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  db,
+  collection,
+  getDocs,
+  query,
+  where,
+} from "@/lib/firebaseClient";
+import { useAuth } from "@/components/AuthProvider";
 
-//todo: remove mock functionality
-const mockSalesData = [
-  { month: "2024-01", sales: 145, revenue: 217500 },
-  { month: "2024-02", sales: 189, revenue: 283500 },
-  { month: "2024-03", sales: 234, revenue: 351000 },
-];
+interface SaleDoc {
+  itemId: string;
+  itemName?: string;
+  variantType: string;
+  quantity: number;
+  totalAmount: number;
+  saleDate: Date;
+  month?: string;
+}
 
-const mockItemStats = [
-  { name: "イラスト集 Vol.1（紙）", totalSales: 342, revenue: 513000, averagePrice: 1500 },
-  { name: "イラスト集 Vol.1（電子版）", totalSales: 128, revenue: 128000, averagePrice: 1000 },
-  { name: "アクリルキーホルダー（グッズ）", totalSales: 98, revenue: 78400, averagePrice: 800 },
-];
-
-const totalSales = mockItemStats.reduce((sum, item) => sum + item.totalSales, 0);
-const totalRevenue = mockItemStats.reduce((sum, item) => sum + item.revenue, 0);
-const totalItems = mockItemStats.length;
+interface ItemStatRow {
+  name: string;
+  totalSales: number;
+  revenue: number;
+  averagePrice: number;
+}
 
 export default function AnalyticsPage() {
+  const { user } = useAuth();
+  const [sales, setSales] = useState<SaleDoc[]>([]);
+  const [itemsCount, setItemsCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      // items count
+      const itemsSnap = await getDocs(
+        query(collection(db, "items"), where("ownerUid", "==", user.uid)),
+      );
+      setItemsCount(itemsSnap.size);
+
+      // sales
+      const salesSnap = await getDocs(
+        query(collection(db, "sales"), where("ownerUid", "==", user.uid)),
+      );
+      const s: SaleDoc[] = salesSnap.docs.map((d) => {
+        const data = d.data() as any;
+        const saleDate: Date = data.saleDate instanceof Date ? data.saleDate : data.saleDate?.toDate?.() ?? new Date();
+        return {
+          itemId: data.itemId,
+          itemName: data.itemName,
+          variantType: data.variantType,
+          quantity: data.quantity ?? 0,
+          totalAmount: data.totalAmount ?? 0,
+          saleDate,
+          month: data.month,
+        };
+      });
+      setSales(s);
+      setLoading(false);
+    };
+    load().catch((err) => {
+      console.error("Failed to load analytics data", err);
+      setLoading(false);
+    });
+  }, [user]);
+
+  const mockItemStats: ItemStatRow[] = useMemo(() => {
+    const map = new Map<string, { totalSales: number; revenue: number; totalPrice: number }>();
+    sales.forEach((s) => {
+      const name = `${s.itemName ?? s.itemId}（${s.variantType}）`;
+      const current = map.get(name) ?? { totalSales: 0, revenue: 0, totalPrice: 0 };
+      current.totalSales += s.quantity;
+      current.revenue += s.totalAmount;
+      current.totalPrice += s.totalAmount; // ざっくり平均単価用
+      map.set(name, current);
+    });
+    return Array.from(map.entries()).map(([name, v]) => ({
+      name,
+      totalSales: v.totalSales,
+      revenue: v.revenue,
+      averagePrice: v.totalSales ? Math.round(v.totalPrice / v.totalSales) : 0,
+    }));
+  }, [sales]);
+
+  const mockSalesData = useMemo(
+    () => {
+      const map = new Map<string, { sales: number; revenue: number }>();
+      sales.forEach((s) => {
+        const d = s.saleDate;
+        const key = s.month ?? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const current = map.get(key) ?? { sales: 0, revenue: 0 };
+        current.sales += s.quantity;
+        current.revenue += s.totalAmount;
+        map.set(key, current);
+      });
+      return Array.from(map.entries())
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([month, v]) => ({ month, sales: v.sales, revenue: v.revenue }));
+    },
+    [sales],
+  );
+
+  const totalSales = mockItemStats.reduce((sum, item) => sum + item.totalSales, 0);
+  const totalRevenue = mockItemStats.reduce((sum, item) => sum + item.revenue, 0);
+  const totalItems = itemsCount;
+
   return (
-    <div className="p-8 space-y-6">
+    <div className="relative p-8 space-y-6">
+      {loading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">読み込み中です…</span>
+          </div>
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold">売上集計</h1>
         <p className="text-muted-foreground">過去の累計販売数と金額を可視化します</p>
@@ -75,7 +172,7 @@ export default function AnalyticsPage() {
       </div>
 
       <Card>
-        <CardHeader>
+          <CardHeader>
           <CardTitle>月別売上推移</CardTitle>
           <CardDescription>過去3ヶ月の売上数と金額の推移</CardDescription>
         </CardHeader>

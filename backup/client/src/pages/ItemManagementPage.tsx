@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,35 +9,80 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import ItemFormModal, { type Item } from "@/components/ItemFormModal";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-
-//todo: remove mock functionality
-const mockItems: Item[] = [
-  { 
-    id: "1", 
-    name: "イラスト集 Vol.1", 
-    variants: [
-      { type: "紙", price: 1500 },
-      { type: "電子版", price: 1000 }
-    ]
-  },
-  { 
-    id: "2", 
-    name: "アクリルキーホルダー", 
-    variants: [
-      { type: "グッズ", price: 800 }
-    ]
-  },
-];
+import {
+  db,
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+} from "@/lib/firebaseClient";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function ItemManagementPage() {
-  const [items, setItems] = useState<Item[]>(mockItems);
+  const { user } = useAuth();
+  const [items, setItems] = useState<Item[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | undefined>();
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchItems = async () => {
+      setLoading(true);
+      const itemsRef = collection(db, "items");
+      const q = query(itemsRef, where("ownerUid", "==", user.uid));
+      const snap = await getDocs(q);
+      try {
+        const fetched: Item[] = snap.docs
+          .map((d) => {
+            const data = d.data() as any;
+            return {
+              id: d.id,
+              name: data.name,
+              variants: data.variants ?? [],
+              archived: data.archived ?? false,
+              createdAt: data.createdAt,
+            } as any;
+          })
+          .sort((a: any, b: any) => {
+            const aTime =
+              a.createdAt?.toDate?.()?.getTime?.() ??
+              (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
+            const bTime =
+              b.createdAt?.toDate?.()?.getTime?.() ??
+              (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+            return bTime - aTime;
+          })
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            variants: item.variants,
+            archived: item.archived ?? false,
+          }));
+        setItems(fetched);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchItems().catch((err) => {
+      console.error("Failed to fetch items", err);
+      toast({
+        title: "読み込みに失敗しました",
+        description: "時間をおいて再度お試しください",
+        variant: "destructive",
+      });
+    });
+  }, [user, toast]);
 
   const handleAddItem = () => {
     setEditingItem(undefined);
@@ -50,35 +95,86 @@ export default function ItemManagementPage() {
   };
 
   const handleDeleteItem = (id: string) => {
-    setItems(items.filter((item) => item.id !== id));
-    toast({
-      title: "削除完了",
-      description: "アイテムを削除しました",
+    if (!user) return;
+    const deleteAsync = async () => {
+      const ref = doc(db, "items", id);
+      await deleteDoc(ref);
+      setItems(items.filter((item) => item.id !== id));
+      toast({
+        title: "削除完了",
+        description: "アイテムを削除しました",
+      });
+    };
+    deleteAsync().catch((err) => {
+      console.error("Failed to delete item", err);
+      toast({
+        title: "削除に失敗しました",
+        description: "時間をおいて再度お試しください",
+        variant: "destructive",
+      });
     });
   };
 
   const handleSubmit = (itemData: Omit<Item, "id"> & { id?: string }) => {
-    if (itemData.id) {
-      setItems(items.map((item) => (item.id === itemData.id ? { ...itemData, id: itemData.id } : item)));
+    if (!user) return;
+    const saveAsync = async () => {
+      if (itemData.id) {
+        const ref = doc(db, "items", itemData.id);
+        await updateDoc(ref, {
+          name: itemData.name,
+          variants: itemData.variants,
+          archived: itemData.archived ?? false,
+          updatedAt: serverTimestamp(),
+        });
+        setItems(
+          items.map((item) =>
+            item.id === itemData.id ? { ...itemData, id: itemData.id } : item,
+          ),
+        );
+        toast({
+          title: "更新完了",
+          description: "アイテムを更新しました",
+        });
+      } else {
+        const ref = await addDoc(collection(db, "items"), {
+          ownerUid: user.uid,
+          name: itemData.name,
+          variants: itemData.variants,
+          archived: itemData.archived ?? false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        const newItem: Item = {
+          ...itemData,
+          id: ref.id,
+        };
+        setItems([newItem, ...items]);
+        toast({
+          title: "追加完了",
+          description: "アイテムを追加しました",
+        });
+      }
+    };
+    saveAsync().catch((err) => {
+      console.error("Failed to save item", err);
       toast({
-        title: "更新完了",
-        description: "アイテムを更新しました",
+        title: "保存に失敗しました",
+        description: "時間をおいて再度お試しください",
+        variant: "destructive",
       });
-    } else {
-      const newItem: Item = {
-        ...itemData,
-        id: Date.now().toString(),
-      };
-      setItems([...items, newItem]);
-      toast({
-        title: "追加完了",
-        description: "アイテムを追加しました",
-      });
-    }
+    });
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="relative p-8 space-y-6">
+      {loading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">読み込み中です…</span>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">アイテム管理</h1>
@@ -97,18 +193,25 @@ export default function ItemManagementPage() {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>アイテム名</TableHead>
-                <TableHead>種類と価格</TableHead>
-                <TableHead className="w-24"></TableHead>
-              </TableRow>
-            </TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>アイテム名</TableHead>
+                  <TableHead>種類と価格</TableHead>
+                  <TableHead className="w-24"></TableHead>
+                </TableRow>
+              </TableHeader>
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>
-                    {item.name}
+                    <div className="flex items-center gap-2">
+                      <span>{item.name}</span>
+                      {item.archived && (
+                        <Badge variant="outline" className="text-xs">
+                          取り扱い終了
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">

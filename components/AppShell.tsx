@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { LogOut } from "lucide-react";
 import type React from "react";
 
@@ -13,23 +12,16 @@ import { Button } from "@/components/ui/button";
 import AppSidebar from "@/components/AppSidebar";
 import LoginPage from "@/components/LoginPage";
 import { useToast } from "@/hooks/use-toast";
+import { AuthProvider, useAuth } from "@/components/AuthProvider";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  // todo: Replace with real Firebase authentication using onAuthStateChanged
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userName] = useState("ユーザー"); // todo: Get from Firebase user.displayName
+function AppShellInner({ children }: { children: React.ReactNode }) {
+  const { user, loading, logout } = useAuth();
   const { toast } = useToast();
 
-  const handleLogin = () => {
-    // todo: Remove this mock login handler when Firebase is integrated
-    console.log("Mock login");
-    setIsLoggedIn(true);
-  };
+  const userName = user?.displayName || "ユーザー";
 
-  const handleSignOut = () => {
-    // todo: Replace with real Firebase signOut(auth)
-    console.log("Mock logout");
-    setIsLoggedIn(false);
+  const handleSignOut = async () => {
+    await logout();
     toast({
       title: "ログアウトしました",
       description: "またのご利用をお待ちしております",
@@ -40,11 +32,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "--sidebar-width": "16rem",
   } as React.CSSProperties;
 
-  if (!isLoggedIn) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">読み込み中...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <LoginPage onLogin={handleLogin} />
+          <LoginPage />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
@@ -82,5 +82,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </QueryClientProvider>
   );
 }
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </AuthProvider>
+  );
+}
+
 
 
