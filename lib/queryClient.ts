@@ -1,3 +1,1 @@
-export * from "../backup/client/src/lib/queryClient";
-
-
+export * from "./lib/queryClient";
