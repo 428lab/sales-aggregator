@@ -132,6 +132,20 @@ export default function PlatformFormModal({
     setItemSettings(itemSettings.filter((_, i) => i !== index));
   };
 
+  // 数値入力用：数字とドットのみ許可
+  const sanitizeNumericInput = (value: string): string => {
+    // 数字とドット以外を除去
+    return value.replace(/[^0-9.]/g, "");
+  };
+
+  // blur時に正規化（先頭の0を除去、空なら0）
+  const normalizeNumericValue = (value: string): number => {
+    const sanitized = sanitizeNumericInput(value);
+    if (sanitized === "" || sanitized === ".") return 0;
+    const num = parseFloat(sanitized);
+    return Number.isFinite(num) ? num : 0;
+  };
+
   const handleItemVariantChange = (
     itemIndex: number,
     variantType: string,
@@ -144,10 +158,12 @@ export default function PlatformFormModal({
     const variant = target.variants.find((v) => v.variantType === variantType);
     if (!variant) return;
 
+    const numValue = typeof value === "string" ? normalizeNumericValue(value) : value;
+
     if (field === "feePercentage") {
-      variant.feePercentage = typeof value === "string" ? Number(value) : value;
+      variant.feePercentage = numValue;
     } else if (field === "shippingFee") {
-      variant.shippingFee = typeof value === "string" ? Number(value) : value;
+      variant.shippingFee = numValue;
     }
     setItemSettings(next);
   };
@@ -160,11 +176,13 @@ export default function PlatformFormModal({
         ...s,
         variants: (s.variants ?? []).filter((v) => v.variantType),
       }));
+
     onSubmit({
       id: platform?.id,
       name,
       description,
-      paymentMethods: paymentMethods.filter((m) => m.name && m.feePercentage >= 0),
+      // 決済方法は現在はプラットフォーム側では管理しないため、既存値を維持する
+      paymentMethods: platform?.paymentMethods ?? [],
       itemSettings: normalizedItemSettings,
     });
     onOpenChange(false);
@@ -180,157 +198,184 @@ export default function PlatformFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{platform ? "販路編集" : "販路追加"}</DialogTitle>
-          <DialogDescription>
-            販売プラットフォームの情報を入力してください
-          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">プラットフォーム名 *</Label>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Label htmlFor="name" className="whitespace-nowrap w-32">
+                プラットフォーム名 *
+              </Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="例：BOOTH"
                 required
+                className="flex-1"
                 data-testid="input-platform-name"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">説明</Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="オンライン通販サイト"
-                data-testid="input-platform-description"
-              />
+
+            <div className="flex items-center gap-4">
+              <Label className="whitespace-nowrap w-32">取り扱いアイテム</Label>
+              <select
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={newItemId}
+                onChange={(e) => setNewItemId(e.target.value)}
+              >
+                <option value="">アイテムを選択</option>
+                {availableItemsForAdd.map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleAddItemSetting}
+                data-testid="button-add-platform-item"
+                disabled={!newItemId}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                追加
+              </Button>
             </div>
 
             <div className="space-y-2">
-              <Label>この販路で取り扱うアイテム</Label>
-              <div className="flex items-center gap-2">
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={newItemId}
-                  onChange={(e) => setNewItemId(e.target.value)}
-                >
-                  <option value="">アイテムを選択</option>
-                  {availableItemsForAdd.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.name}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleAddItemSetting}
-                  data-testid="button-add-platform-item"
-                  disabled={!newItemId}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  追加
-                </Button>
-              </div>
+              {itemSettings.map((setting, index) => {
+                const item = items.find((it) => it.id === setting.itemId);
+                return (
+                  <div key={index} className="border rounded-md p-2 bg-muted/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">
+                        {item?.name}
+                        {item?.archived && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            （終了）
+                          </span>
+                        )}
+                      </span>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => handleRemoveItemSetting(index)}
+                        data-testid={`button-remove-platform-item-${index}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
 
-              <div className="space-y-3">
-                {itemSettings.map((setting, index) => {
-                  const item = items.find((it) => it.id === setting.itemId);
-                  return (
-                    <div key={index} className="space-y-2 border rounded-md p-3">
-                      <div className="flex items-start">
-                        <div className="flex-1 space-y-1">
-                          <Label className="text-xs">
-                            {item?.name}
-                            {item?.archived ? "（取り扱い終了）" : ""}
-                          </Label>
-                          {item?.variants && item.variants.length > 0 && (
-                            <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                              {item.variants.map((v) => (
-                                <span
-                                  key={v.type}
-                                  className="rounded border border-dashed px-2 py-0.5"
-                                >
-                                  {v.type}: ¥{(v.price ?? 0).toLocaleString()}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleRemoveItemSetting(index)}
-                          data-testid={`button-remove-platform-item-${index}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-
-                      <div className="mt-2 space-y-1">
-                        {setting.variants.map((vs) => (
-                          <div key={vs.variantType} className="flex items-center gap-2">
-                            <div className="w-28 text-xs text-muted-foreground">
-                              {vs.variantType}
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <Label className="text-[11px] text-muted-foreground">
-                                手数料（％）
-                              </Label>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                value={
-                                  Number.isFinite(vs.feePercentage) ? vs.feePercentage : 0
-                                }
-                                onChange={(e) =>
-                                  handleItemVariantChange(
-                                    index,
-                                    vs.variantType,
-                                    "feePercentage",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="例：10"
-                              />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <Label className="text-[11px] text-muted-foreground">
-                                送料（円）
-                              </Label>
-                              <Input
-                                type="number"
-                                value={
-                                  Number.isFinite(vs.shippingFee) ? vs.shippingFee : 0
-                                }
-                                onChange={(e) =>
-                                  handleItemVariantChange(
-                                    index,
-                                    vs.variantType,
-                                    "shippingFee",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="例：100"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left font-normal py-1 w-24">種類</th>
+                          <th className="text-left font-normal py-1 w-20">価格</th>
+                          <th className="text-left font-normal py-1 w-24">手数料%</th>
+                          <th className="text-left font-normal py-1 w-24">送料</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {setting.variants.map((vs) => {
+                          const variantInfo = item?.variants?.find(
+                            (v) => v.type === vs.variantType,
+                          );
+                          return (
+                            <tr key={vs.variantType}>
+                                <td className="py-1 text-muted-foreground">
+                                  {vs.variantType}
+                                </td>
+                                <td className="py-1 text-muted-foreground">
+                                  ¥{(variantInfo?.price ?? 0).toLocaleString()}
+                                </td>
+                                <td className="py-1 pr-1">
+                                  <Input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={
+                                      Number.isFinite(vs.feePercentage)
+                                        ? String(vs.feePercentage)
+                                        : "0"
+                                    }
+                                    onChange={(e) => {
+                                      // 入力中は数字とドットのみ許可
+                                      const sanitized = sanitizeNumericInput(e.target.value);
+                                      const next = [...itemSettings];
+                                      const target = next[index];
+                                      if (target) {
+                                        const variant = target.variants.find(
+                                          (v) => v.variantType === vs.variantType,
+                                        );
+                                        if (variant) {
+                                          // 一時的に文字列として保持（表示用）
+                                          variant.feePercentage = sanitized === "" ? 0 : parseFloat(sanitized) || 0;
+                                          setItemSettings(next);
+                                        }
+                                      }
+                                    }}
+                                    onBlur={(e) =>
+                                      handleItemVariantChange(
+                                        index,
+                                        vs.variantType,
+                                        "feePercentage",
+                                        e.target.value,
+                                      )
+                                    }
+                                    className="h-7 w-full text-xs px-2"
+                                  />
+                                </td>
+                                <td className="py-1">
+                                  <Input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={
+                                      Number.isFinite(vs.shippingFee)
+                                        ? String(vs.shippingFee)
+                                        : "0"
+                                    }
+                                    onChange={(e) => {
+                                      // 入力中は数字のみ許可（送料は整数）
+                                      const sanitized = e.target.value.replace(/[^0-9]/g, "");
+                                      const next = [...itemSettings];
+                                      const target = next[index];
+                                      if (target) {
+                                        const variant = target.variants.find(
+                                          (v) => v.variantType === vs.variantType,
+                                        );
+                                        if (variant) {
+                                          variant.shippingFee = sanitized === "" ? 0 : parseInt(sanitized, 10) || 0;
+                                          setItemSettings(next);
+                                        }
+                                      }
+                                    }}
+                                    onBlur={(e) =>
+                                      handleItemVariantChange(
+                                        index,
+                                        vs.variantType,
+                                        "shippingFee",
+                                        e.target.value,
+                                      )
+                                    }
+                                    className="h-7 w-full text-xs px-2"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   );
                 })}
-              </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0 pt-4 border-t">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               キャンセル
             </Button>

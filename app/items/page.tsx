@@ -1,6 +1,6 @@
 "use client";
 
-import ItemManagementPage from "@/backup/client/src/pages/ItemManagementPage";
+import ItemManagementPage from "@/components/ItemManagementPage";
 
 export default function ItemsPage() {
   return <ItemManagementPage />;

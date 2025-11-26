@@ -1,6 +1,6 @@
 "use client";
 
-import AnalyticsPage from "@/backup/client/src/pages/AnalyticsPage";
+import AnalyticsPage from "@/components/AnalyticsPage";
 
 export default function AnalyticsRoutePage() {
   return <AnalyticsPage />;

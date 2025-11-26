@@ -1,9 +1,9 @@
 "use client";
 
-import NotFound from "@/backup/client/src/pages/not-found";
+import NotFoundPage from "@/components/NotFoundPage";
 
 export default function RootNotFound() {
-  return <NotFound />;
+  return <NotFoundPage />;
 }
 
 

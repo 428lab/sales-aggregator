@@ -1,6 +1,6 @@
 "use client";
 
-import SalesChannelPage from "@/backup/client/src/pages/SalesChannelPage";
+import SalesChannelPage from "@/components/SalesChannelPage";
 
 export default function ChannelsPage() {
   return <SalesChannelPage />;

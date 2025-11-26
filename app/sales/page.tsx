@@ -1,6 +1,6 @@
 "use client";
 
-import SalesInputPage from "@/backup/client/src/pages/SalesInputPage";
+import SalesInputPage from "@/components/SalesInputPage";
 
 export default function SalesPage() {
   return <SalesInputPage />;
