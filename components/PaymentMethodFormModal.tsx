@@ -24,6 +24,20 @@ interface PaymentMethodFormModalProps {
   onSubmit: (method: Omit<PaymentMethod, "id"> & { id?: string }) => void;
 }
 
+const sanitizeNumericInput = (value: string) => {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length <= 1) return cleaned;
+  return parts[0] + "." + parts.slice(1).join("");
+};
+
+const normalizeNumericValue = (value: string) => {
+  if (!value) return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return String(num);
+};
+
 export default function PaymentMethodFormModal({
   open,
   onOpenChange,
@@ -45,10 +59,11 @@ export default function PaymentMethodFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const normalized = normalizeNumericValue(feePercentage);
     onSubmit({
       id: paymentMethod?.id,
       name,
-      feePercentage: Number(feePercentage),
+      feePercentage: normalized === "" ? 0 : Number(normalized),
     });
     onOpenChange(false);
   };
@@ -79,10 +94,11 @@ export default function PaymentMethodFormModal({
               <Label htmlFor="fee">手数料 (%) *</Label>
               <Input
                 id="fee"
-                type="number"
-                step="0.1"
+                type="text"
+                inputMode="decimal"
                 value={feePercentage}
-                onChange={(e) => setFeePercentage(e.target.value)}
+                onChange={(e) => setFeePercentage(sanitizeNumericInput(e.target.value))}
+                onBlur={(e) => setFeePercentage(normalizeNumericValue(e.target.value))}
                 placeholder="3.5"
                 required
                 data-testid="input-payment-fee"

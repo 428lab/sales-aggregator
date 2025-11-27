@@ -51,6 +51,21 @@ interface PlatformFormModalProps {
   onSubmit: (platform: Omit<Platform, "id"> & { id?: string }) => void;
 }
 
+const sanitizeNumericInput = (value: string) => {
+  // 数字と小数点以外を削除し、小数点は先頭の1つだけ許可
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length <= 1) return cleaned;
+  return parts[0] + "." + parts.slice(1).join("");
+};
+
+const normalizeNumericValue = (value: string) => {
+  if (!value) return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return String(num);
+};
+
 export default function PlatformFormModal({
   open,
   onOpenChange,
@@ -279,45 +294,70 @@ export default function PlatformFormModal({
                           <div key={vs.variantType} className="flex items-center gap-2">
                             <div className="w-28 text-xs text-muted-foreground">
                               {vs.variantType}
-                    </div>
+                            </div>
                             <div className="flex-1 space-y-1">
                               <Label className="text-[11px] text-muted-foreground">
                                 手数料（％）
                               </Label>
-                        <Input
-                          type="number"
-                          step="0.1"
+                              <Input
+                                type="text"
+                                inputMode="decimal"
                                 value={
-                                  Number.isFinite(vs.feePercentage) ? vs.feePercentage : 0
+                                  Number.isFinite(vs.feePercentage)
+                                    ? String(vs.feePercentage)
+                                    : ""
                                 }
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  const v = sanitizeNumericInput(e.target.value);
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
                                     "feePercentage",
-                                    e.target.value,
-                                  )
-                                }
+                                    v,
+                                  );
+                                }}
+                                onBlur={(e) => {
+                                  const normalized = normalizeNumericValue(e.target.value);
+                                  handleItemVariantChange(
+                                    index,
+                                    vs.variantType,
+                                    "feePercentage",
+                                    normalized,
+                                  );
+                                }}
                                 placeholder="例：10"
-                        />
-                      </div>
+                              />
+                            </div>
                             <div className="flex-1 space-y-1">
                               <Label className="text-[11px] text-muted-foreground">
                                 送料（円）
                               </Label>
-                        <Input
-                          type="number"
+                              <Input
+                                type="text"
+                                inputMode="numeric"
                                 value={
-                                  Number.isFinite(vs.shippingFee) ? vs.shippingFee : 0
+                                  Number.isFinite(vs.shippingFee)
+                                    ? String(vs.shippingFee)
+                                    : ""
                                 }
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  const v = sanitizeNumericInput(e.target.value);
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
                                     "shippingFee",
-                                    e.target.value,
-                                  )
-                                }
+                                    v,
+                                  );
+                                }}
+                                onBlur={(e) => {
+                                  const normalized = normalizeNumericValue(e.target.value);
+                                  handleItemVariantChange(
+                                    index,
+                                    vs.variantType,
+                                    "shippingFee",
+                                    normalized,
+                                  );
+                                }}
                                 placeholder="例：100"
                               />
                             </div>

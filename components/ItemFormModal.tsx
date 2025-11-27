@@ -37,6 +37,20 @@ interface ItemFormModalProps {
   onSubmit: (item: Omit<Item, "id"> & { id?: string }) => void;
 }
 
+const sanitizeNumericInput = (value: string) => {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length <= 1) return cleaned;
+  return parts[0] + "." + parts.slice(1).join("");
+};
+
+const normalizeNumericValue = (value: string) => {
+  if (!value) return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return String(num);
+};
+
 export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: ItemFormModalProps) {
   const [name, setName] = useState("");
   const [variants, setVariants] = useState<ItemVariant[]>([{ type: "", price: 0 }]);
@@ -148,9 +162,19 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
                     </div>
                     <div className="w-32">
                       <Input
-                        type="number"
-                        value={variant.price || ""}
-                        onChange={(e) => handleVariantChange(index, "price", e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={variant.price === 0 ? "" : String(variant.price)}
+                        onChange={(e) => {
+                          const v = sanitizeNumericInput(e.target.value);
+                          const num = v === "" ? 0 : Number(v);
+                          handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
+                        }}
+                        onBlur={(e) => {
+                          const normalized = normalizeNumericValue(e.target.value);
+                          const num = normalized === "" ? 0 : Number(normalized);
+                          handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
+                        }}
                         placeholder="価格"
                         required
                         data-testid={`input-variant-price-${index}`}
