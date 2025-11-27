@@ -222,6 +222,14 @@ export default function SalesInputPage() {
     loadSalesData();
   }, [user, selectedMonth, items, platforms, toast]);
 
+  // この販路でこのバリエーションが取り扱い対象かどうか
+  const isVariantEnabledOnPlatform = (item: Item, variantType: string, platformId: string) => {
+    const settings = item.platformSettings ?? [];
+    return settings.some(
+      (s) => s.platformId === platformId && (!s.variantType || s.variantType === variantType),
+    );
+  };
+
   const columnTotals = useMemo(() => {
     const totals: Record<
       string,
@@ -239,6 +247,9 @@ export default function SalesInputPage() {
     items.forEach((item) => {
       item.variants.forEach((variant) => {
         platforms.forEach((platform) => {
+          // この販路で取り扱っていない組み合わせは集計対象外
+          if (!isVariantEnabledOnPlatform(item, variant.type, platform.id)) return;
+
           const key = buildSalesKey(item.id, variant.type, platform.id);
           const quantity = salesData[key] || 0;
           if (!quantity) return;
@@ -262,7 +273,8 @@ export default function SalesInputPage() {
               : 0;
 
           const fee = subtotal * (feeRate / 100);
-          const shipping = variant.requiresShipping ? shippingBase : 0;
+          // 送料は「単品ごと」に発生する前提のため、数量分を掛ける
+          const shipping = variant.requiresShipping ? shippingBase * quantity : 0;
           const charges = fee + shipping;
           const payout = subtotal - charges;
 
@@ -330,6 +342,9 @@ export default function SalesInputPage() {
         .forEach((item) => {
           item.variants.forEach((variant) => {
             platforms.forEach((platform) => {
+              // この販路で取り扱っていない組み合わせは保存しない
+              if (!isVariantEnabledOnPlatform(item, variant.type, platform.id)) return;
+
               const quantity = getSalesValue(item.id, variant.type, platform.id);
               if (quantity > 0) {
                 const subtotal = variant.basePrice * quantity;
@@ -352,7 +367,8 @@ export default function SalesInputPage() {
                     : 0;
 
                 const fee = subtotal * (feeRate / 100);
-                const shipping = variant.requiresShipping ? shippingBase : 0;
+                // 送料は「単品ごと」に発生する前提のため、数量分を掛ける
+                const shipping = variant.requiresShipping ? shippingBase * quantity : 0;
                 const totalAmount = subtotal + fee + shipping;
 
                 writes.push(
@@ -394,8 +410,21 @@ export default function SalesInputPage() {
     }
   }
 
+  // 合計金額を計算
+  const grandTotal = useMemo(() => {
+    let subtotal = 0;
+    let charges = 0;
+    let payout = 0;
+    Object.values(columnTotals).forEach((t) => {
+      subtotal += t.subtotal;
+      charges += t.charges;
+      payout += t.payout;
+    });
+    return { subtotal, charges, payout };
+  }, [columnTotals]);
+
   return (
-    <div className="relative p-8 space-y-6">
+    <div className="relative p-6 space-y-5">
       {loading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3">
@@ -404,87 +433,85 @@ export default function SalesInputPage() {
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between">
+
+      {/* ヘッダー＋年月選択を1行に */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">売上数入力</h1>
-          <p className="text-sm text-gray-600">
-            販路と支払い種別ごとの売上数を、商品×種別のマトリクスで入力します（空欄は0として扱われます）
+          <h1 className="text-xl font-bold text-gray-900">売上入力</h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            販路ごとの売上数量を入力
           </p>
         </div>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="w-32">
-            <Select value={yearInput} onValueChange={handleYearChange}>
-              <SelectTrigger className="w-full" data-testid="select-year">
-                <SelectValue placeholder="年" />
-              </SelectTrigger>
-              <SelectContent>
-                {yearOptions.map((year) => (
-                  <SelectItem key={year} value={year}>
-                    {year}年
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-24">
-            <Select value={monthInput} onValueChange={setMonthInput}>
-              <SelectTrigger className="w-full" data-testid="select-month">
-                <SelectValue placeholder="月" />
-              </SelectTrigger>
-              <SelectContent>
-                {monthOptionsForYear.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Button type="button" onClick={handleApplyMonth}>
-              表示
-            </Button>
-          </div>
+          <Select value={yearInput} onValueChange={handleYearChange}>
+            <SelectTrigger className="w-40 h-8 text-sm" data-testid="select-year">
+              <SelectValue placeholder="年" />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((year) => (
+                <SelectItem key={year} value={year} className="text-sm">
+                  {year}年
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={monthInput} onValueChange={setMonthInput}>
+            <SelectTrigger className="w-20 h-8 text-sm" data-testid="select-month">
+              <SelectValue placeholder="月" />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptionsForYear.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value} className="text-sm">
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="button" size="sm" onClick={handleApplyMonth}>
+            表示
+          </Button>
         </div>
       </div>
 
-      <div className="text-sm text-gray-600">
-        表示中の年月: <span className="font-medium">{selectedMonthLabel}</span>
-      </div>
-
-      {platforms.length > 0 && items.some((item) => !item.archived) ? (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold">売上数入力表</h2>
+      {/* サマリー（コンパクト版） */}
+      {platforms.length > 0 && items.some((item) => !item.archived) && grandTotal.subtotal > 0 && (
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500">売上:</span>
+            <span className="font-mono font-semibold text-gray-900">¥{grandTotal.subtotal.toLocaleString()}</span>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500">経費:</span>
+            <span className="font-mono font-semibold text-red-600">-¥{grandTotal.charges.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500">実収入:</span>
+            <span className="font-mono font-bold text-green-600">¥{grandTotal.payout.toLocaleString()}</span>
+          </div>
+        </div>
+      )}
+
+      {/* メインテーブル */}
+      {platforms.length > 0 && items.some((item) => !item.archived) ? (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-300">
-                  <th
-                    className="border-r border-gray-300 px-4 py-2 text-left font-semibold bg-gray-50 align-bottom min-w-[120px]"
-                  >
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-700 min-w-[100px] border-r border-gray-200">
                     商品
                   </th>
-                  <th
-                    className="border-r border-gray-300 px-4 py-2 text-left font-semibold bg-gray-50 align-bottom"
-                  >
+                  <th className="px-3 py-2 text-left font-medium text-gray-700 min-w-[70px] border-r border-gray-200">
                     種別
                   </th>
-                  <th
-                    className="border-r border-gray-300 px-4 py-2 text-right font-semibold bg-gray-50 align-bottom min-w-[100px]"
-                  >
+                  <th className="px-3 py-2 text-right font-medium text-gray-700 min-w-[70px] border-r border-gray-200">
                     単価
                   </th>
-                  {platforms.map((platform, idx) => (
+                  {platforms.map((platform) => (
                     <th
                       key={platform.id}
-                      className={`px-4 py-2 text-center font-semibold bg-gray-50 text-xs min-w-[120px] ${
-                        idx < platforms.length - 1 ? "border-r border-gray-200" : "border-r border-gray-300"
-                      }`}
+                      className="px-3 py-2 text-center font-medium text-gray-700 min-w-[80px] border-r border-gray-100 last:border-r-0"
                     >
                       {platform.name}
                     </th>
@@ -494,122 +521,131 @@ export default function SalesInputPage() {
               <tbody>
                 {items
                   .filter((item) => !item.archived)
-                  .flatMap((item) =>
+                  .flatMap((item, itemIdx) =>
                     item.variants.map((variant, variantIdx) => (
-                      <tr key={`${item.id}-${variant.type}`} className="border-b border-gray-200">
+                      <tr
+                        key={`${item.id}-${variant.type}`}
+                        className={`border-b border-gray-100 ${itemIdx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                      >
                         {variantIdx === 0 && (
                           <td
                             rowSpan={item.variants.length}
-                            className="border-r border-gray-300 px-4 py-2 font-semibold align-top bg-gray-50"
+                            className="sticky left-0 z-10 px-3 py-1.5 font-medium text-gray-900 align-top border-r border-gray-200"
+                            style={{ backgroundColor: itemIdx % 2 === 0 ? "white" : "rgb(249 250 251 / 0.5)" }}
                           >
                             {item.name}
                           </td>
                         )}
-                        <td className="border-r border-gray-200 px-4 py-2 font-medium">
+                        <td className="px-3 py-1.5 text-gray-600 border-r border-gray-200">
                           {variant.type}
                         </td>
-                        <td className="border-r border-gray-300 px-4 py-2 text-right font-mono text-sm">
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-600 border-r border-gray-200">
                           ¥{variant.basePrice.toLocaleString()}
                         </td>
-                        {platforms.map((platform, idx) => {
-                          const quantity = getSalesValue(item.id, variant.type, platform.id);
+                        {platforms.map((platform) => {
+                          const enabled = isVariantEnabledOnPlatform(item, variant.type, platform.id);
+                          const quantity = enabled ? getSalesValue(item.id, variant.type, platform.id) : 0;
                           return (
                             <td
                               key={platform.id}
-                              className={`px-2 py-1 text-center ${
-                                idx < platforms.length - 1 ? "border-r border-gray-200" : "border-r border-gray-300"
+                              className={`px-1.5 py-1.5 text-center border-r border-gray-100 last:border-r-0 ${
+                                !enabled ? "bg-gray-100" : ""
                               }`}
                             >
-                              <input
-                                type="number"
-                                min={0}
-                                className="w-full px-2 py-1 text-center font-mono text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                value={quantity || ""}
-                                onChange={(e) =>
-                                  handleSalesChange(item.id, variant.type, platform.id, e.target.value)
-                                }
-                                placeholder=""
-                                data-testid={`input-sales-${item.id}-${variant.type}-${platform.id}`}
-                              />
+                              {enabled ? (
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  className="w-full px-2 py-1.5 text-center font-mono text-sm
+                                    bg-white border border-gray-300 rounded-md
+                                    focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500
+                                    hover:border-gray-400 shadow-xs transition-colors
+                                    placeholder:text-gray-300"
+                                  value={quantity || ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9]/g, "");
+                                    handleSalesChange(item.id, variant.type, platform.id, val);
+                                  }}
+                                  placeholder="0"
+                                  data-testid={`input-sales-${item.id}-${variant.type}-${platform.id}`}
+                                />
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-full text-[11px] text-gray-400">
+                                  -
+                                </span>
+                              )}
                             </td>
                           );
                         })}
                       </tr>
                     )),
                   )}
-                <tr className="border-b border-gray-300 bg-gray-50">
-                  <td className="border-r border-gray-300 px-4 py-2 font-semibold" colSpan={2}>
+              </tbody>
+              <tfoot className="bg-gray-50 border-t border-gray-200">
+                <tr>
+                  <td className="sticky left-0 z-10 bg-gray-50 px-3 py-2 font-medium text-gray-700 border-r border-gray-200" colSpan={2}>
                     小計
                   </td>
-                  <td className="border-r border-gray-300 px-4 py-2" />
-                  {platforms.map((platform, idx) => {
+                  <td className="px-3 py-2 border-r border-gray-200" />
+                  {platforms.map((platform) => {
                     const totals = columnTotals[platform.id];
                     return (
-                      <td
-                        key={`${platform.id}-subtotal`}
-                        className={`px-4 py-2 text-right font-mono text-sm ${
-                          idx < platforms.length - 1 ? "border-r border-gray-200" : "border-r border-gray-300"
-                        }`}
-                      >
-                        {totals && totals.subtotal > 0 ? `¥${totals.subtotal.toLocaleString()}` : ""}
+                      <td key={`${platform.id}-subtotal`} className="px-3 py-2 text-right font-mono text-gray-900 border-r border-gray-100 last:border-r-0">
+                        {totals && totals.subtotal > 0 ? `¥${totals.subtotal.toLocaleString()}` : "-"}
                       </td>
                     );
                   })}
                 </tr>
-                <tr className="border-b border-gray-300 bg-gray-50">
-                  <td className="border-r border-gray-300 px-4 py-2 font-semibold" colSpan={2}>
-                    送料・手数料
+                <tr>
+                  <td className="sticky left-0 z-10 bg-gray-50 px-3 py-2 font-medium text-gray-700 border-r border-gray-200" colSpan={2}>
+                    経費
                   </td>
-                  <td className="border-r border-gray-300 px-4 py-2" />
-                  {platforms.map((platform, idx) => {
+                  <td className="px-3 py-2 border-r border-gray-200" />
+                  {platforms.map((platform) => {
                     const totals = columnTotals[platform.id];
                     return (
-                      <td
-                        key={`${platform.id}-charges`}
-                        className={`px-4 py-2 text-right font-mono text-sm ${
-                          idx < platforms.length - 1 ? "border-r border-gray-200" : "border-r border-gray-300"
-                        }`}
-                      >
-                        {totals && totals.charges > 0 ? `¥${totals.charges.toLocaleString()}` : ""}
+                      <td key={`${platform.id}-charges`} className="px-3 py-2 text-right font-mono text-red-600 border-r border-gray-100 last:border-r-0">
+                        {totals && totals.charges > 0 ? `-¥${totals.charges.toLocaleString()}` : "-"}
                       </td>
                     );
                   })}
                 </tr>
-                <tr className="bg-gray-50">
-                  <td className="border-r border-gray-300 px-4 py-2 font-semibold" colSpan={2}>
-                    支払額
+                <tr className="border-t border-gray-200">
+                  <td className="sticky left-0 z-10 bg-gray-100 px-3 py-2 font-semibold text-gray-900 border-r border-gray-200" colSpan={2}>
+                    実収入
                   </td>
-                  <td className="border-r border-gray-300 px-4 py-2" />
-                  {platforms.map((platform, idx) => {
+                  <td className="px-3 py-2 bg-gray-100 border-r border-gray-200" />
+                  {platforms.map((platform) => {
                     const totals = columnTotals[platform.id];
                     return (
-                      <td
-                        key={`${platform.id}-payout`}
-                        className={`px-4 py-2 text-right font-mono text-sm ${
-                          idx < platforms.length - 1 ? "border-r border-gray-200" : "border-r border-gray-300"
-                        }`}
-                      >
-                        {totals && totals.payout !== 0 ? `¥${totals.payout.toLocaleString()}` : ""}
+                      <td key={`${platform.id}-payout`} className="px-3 py-2 text-right font-mono font-semibold text-green-600 bg-gray-100 border-r border-gray-100 last:border-r-0">
+                        {totals && totals.payout !== 0 ? `¥${totals.payout.toLocaleString()}` : "-"}
                       </td>
                     );
                   })}
                 </tr>
-              </tbody>
+              </tfoot>
             </table>
           </div>
         </div>
       ) : (
-        <div className="border border-dashed border-gray-300 rounded-lg p-6 text-sm text-gray-600 bg-white/60">
-          {platforms.length === 0 && (
-            <p>販路がまだ登録されていません。「販路管理」から販路を追加してください。</p>
-          )}
-          {platforms.length > 0 && !items.some((item) => !item.archived) && (
-            <p>取り扱い中のアイテムがありません。「アイテム管理」で新しいアイテムを追加してください。</p>
+        <div className="border border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50/50">
+          {platforms.length === 0 ? (
+            <>
+              <p className="text-gray-600 font-medium">販路が登録されていません</p>
+              <p className="text-gray-500 text-sm mt-1">「販路管理」から販路を追加してください</p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-600 font-medium">取り扱いアイテムがありません</p>
+              <p className="text-gray-500 text-sm mt-1">「アイテム管理」でアイテムを追加してください</p>
+            </>
           )}
         </div>
       )}
 
-      <div className="flex justify-end pt-4">
+      {/* 保存ボタン */}
+      <div className="flex justify-end">
         <Button onClick={handleSave} data-testid="button-save-sales">
           保存
         </Button>
@@ -617,5 +653,3 @@ export default function SalesInputPage() {
     </div>
   );
 }
-
-
