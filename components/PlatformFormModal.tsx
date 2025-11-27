@@ -56,7 +56,9 @@ const normalizeNumericValue = (value: string) => {
   if (!value) return "";
   const num = Number(value);
   if (!Number.isFinite(num)) return "";
-  return String(num);
+  // 小数第2位以降は四捨五入して 0.1 単位に揃える
+  const rounded = Math.round(num * 10) / 10;
+  return String(rounded);
 };
 
 export default function PlatformFormModal({
