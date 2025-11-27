@@ -281,7 +281,7 @@ export default function SalesChannelPage() {
       )}
       <div>
         <h1 className="text-2xl font-bold">販路管理</h1>
-        <p className="text-muted-foreground">販売プラットフォームと決済方法を管理します</p>
+        <p className="text-muted-foreground">販売プラットフォームと取扱アイテムを管理します</p>
       </div>
 
       <div className="flex justify-end">
@@ -294,7 +294,7 @@ export default function SalesChannelPage() {
       <Card>
         <CardHeader>
           <CardTitle>販路一覧</CardTitle>
-          <CardDescription>登録されている販売プラットフォームと決済方法です</CardDescription>
+          <CardDescription>登録されている販売プラットフォームと取扱アイテムです</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

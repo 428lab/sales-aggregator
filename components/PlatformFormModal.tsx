@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -11,12 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
-
-export interface PaymentMethod {
-  name: string;
-  feePercentage: number;
-  shippingFee: number;
-}
 
 export interface PlatformItemVariantSetting {
   variantType: string;
@@ -32,8 +25,8 @@ export interface PlatformItemSetting {
 export interface Platform {
   id: string;
   name: string;
-  description: string;
-  paymentMethods: PaymentMethod[];
+  description?: string;
+  paymentMethods?: any[];
   itemSettings?: PlatformItemSetting[];
 }
 
@@ -74,52 +67,18 @@ export default function PlatformFormModal({
   onSubmit,
 }: PlatformFormModalProps) {
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    { name: "", feePercentage: 0, shippingFee: 0 },
-  ]);
   const [itemSettings, setItemSettings] = useState<PlatformItemSetting[]>([]);
   const [newItemId, setNewItemId] = useState<string>("");
 
   useEffect(() => {
     if (platform) {
       setName(platform.name);
-      setDescription(platform.description);
-      setPaymentMethods(
-        platform.paymentMethods.length > 0
-          ? platform.paymentMethods
-          : [{ name: "", feePercentage: 0, shippingFee: 0 }],
-      );
       setItemSettings(platform.itemSettings ?? []);
     } else {
       setName("");
-      setDescription("");
-      setPaymentMethods([{ name: "", feePercentage: 0, shippingFee: 0 }]);
       setItemSettings([]);
     }
   }, [platform, open]);
-
-  const handleAddPaymentMethod = () => {
-    setPaymentMethods([...paymentMethods, { name: "", feePercentage: 0, shippingFee: 0 }]);
-  };
-
-  const handleRemovePaymentMethod = (index: number) => {
-    if (paymentMethods.length > 1) {
-      setPaymentMethods(paymentMethods.filter((_, i) => i !== index));
-    }
-  };
-
-  const handlePaymentMethodChange = (index: number, field: keyof PaymentMethod, value: string | number) => {
-    const newMethods = [...paymentMethods];
-    if (field === "name") {
-      newMethods[index].name = value as string;
-    } else if (field === "feePercentage") {
-      newMethods[index].feePercentage = typeof value === "string" ? Number(value) : value;
-    } else if (field === "shippingFee") {
-      newMethods[index].shippingFee = typeof value === "string" ? Number(value) : value;
-    }
-    setPaymentMethods(newMethods);
-  };
 
   const handleAddItemSetting = () => {
     if (!newItemId) return;
@@ -175,11 +134,15 @@ export default function PlatformFormModal({
         ...s,
         variants: (s.variants ?? []).filter((v) => v.variantType),
       }));
+
+    const paymentMethods = platform?.paymentMethods ?? [];
+    const description = platform?.description ?? "";
+
     onSubmit({
       id: platform?.id,
       name,
       description,
-      paymentMethods: paymentMethods.filter((m) => m.name && m.feePercentage >= 0),
+      paymentMethods,
       itemSettings: normalizedItemSettings,
     });
     onOpenChange(false);
@@ -195,19 +158,20 @@ export default function PlatformFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{platform ? "販路編集" : "販路追加"}</DialogTitle>
-          <DialogDescription>
-            販売プラットフォームの情報を入力してください
-          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">プラットフォーム名 *</Label>
+            {/* プラットフォーム名 行: ラベル左・入力右 */}
+            <div className="flex items-center gap-4">
+              <Label htmlFor="name" className="w-32 text-right">
+                プラットフォーム名 *
+              </Label>
               <Input
                 id="name"
+                className="flex-1"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="例：BOOTH"
@@ -215,20 +179,11 @@ export default function PlatformFormModal({
                 data-testid="input-platform-name"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">説明</Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="オンライン通販サイト"
-                data-testid="input-platform-description"
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label>この販路で取り扱うアイテム</Label>
-              <div className="flex items-center gap-2">
+            {/* この販路で取り扱うアイテム 行 */}
+            <div className="flex items-center gap-4">
+              <Label className="w-32 text-right">この販路で取り扱うアイテム</Label>
+              <div className="flex flex-1 items-center gap-2">
                 <select
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={newItemId}
@@ -253,7 +208,10 @@ export default function PlatformFormModal({
                   追加
                 </Button>
               </div>
-              
+            </div>
+
+            {/* アイテムごとの設定 */}
+            <div className="space-y-2">
               <div className="space-y-3">
                 {itemSettings.map((setting, index) => {
                   const item = items.find((it) => it.id === setting.itemId);
