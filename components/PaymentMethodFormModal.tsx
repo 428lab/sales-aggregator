@@ -48,6 +48,7 @@ export default function PaymentMethodFormModal({
 }: PaymentMethodFormModalProps) {
   const [name, setName] = useState("");
   const [feePercentage, setFeePercentage] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (paymentMethod) {
@@ -62,6 +63,10 @@ export default function PaymentMethodFormModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const normalized = normalizeNumericValue(feePercentage);
+    if (feePercentage !== "" && normalized === "") {
+      setError("数値を入力してください");
+      return;
+    }
     onSubmit({
       id: paymentMethod?.id,
       name,
@@ -99,12 +104,29 @@ export default function PaymentMethodFormModal({
                 type="text"
                 inputMode="decimal"
                 value={feePercentage}
-                onChange={(e) => setFeePercentage(sanitizeNumericInput(e.target.value))}
-                onBlur={(e) => setFeePercentage(normalizeNumericValue(e.target.value))}
+                onChange={(e) => {
+                  setFeePercentage(e.target.value);
+                  setError(null);
+                }}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  const normalized = normalizeNumericValue(raw);
+                  if (raw !== "" && normalized === "") {
+                    setError("数値を入力してください");
+                    return;
+                  }
+                  setFeePercentage(normalized);
+                  setError(null);
+                }}
                 placeholder="3.5"
                 required
                 data-testid="input-payment-fee"
               />
+              {error && (
+                <p className="text-xs text-red-500 mt-1">
+                  {error}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>

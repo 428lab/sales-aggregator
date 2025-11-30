@@ -15,6 +15,11 @@ export interface PlatformItemVariantSetting {
   variantType: string;
   feePercentage: number;
   shippingFee: number;
+  // UI 用の一時状態
+  feeInput?: string;
+  shippingInput?: string;
+  feeError?: string;
+  shippingError?: string;
 }
 
 export interface PlatformItemSetting {
@@ -122,8 +127,26 @@ export default function PlatformFormModal({
 
     if (field === "feePercentage") {
       variant.feePercentage = typeof value === "string" ? Number(value) : value;
+      variant.feeInput = undefined;
+      variant.feeError = undefined;
     } else if (field === "shippingFee") {
       variant.shippingFee = typeof value === "string" ? Number(value) : value;
+      variant.shippingInput = undefined;
+      variant.shippingError = undefined;
+    } else {
+      // feeInput / shippingInput / エラー系など UI 用のフィールド更新
+      // 型安全のために分岐を明示
+      if (field === "feeInput") {
+        variant.feeInput = String(value);
+        variant.feeError = undefined;
+      } else if (field === "shippingInput") {
+        variant.shippingInput = String(value);
+        variant.shippingError = undefined;
+      } else if (field === "feeError") {
+        variant.feeError = String(value);
+      } else if (field === "shippingError") {
+        variant.shippingError = String(value);
+      }
     }
     setItemSettings(next);
   };
@@ -133,8 +156,14 @@ export default function PlatformFormModal({
     const normalizedItemSettings = itemSettings
       .filter((s) => s.itemId)
       .map((s) => ({
-        ...s,
-        variants: (s.variants ?? []).filter((v) => v.variantType),
+        itemId: s.itemId,
+        variants: (s.variants ?? [])
+          .filter((v) => v.variantType)
+          .map((v) => ({
+            variantType: v.variantType,
+            feePercentage: v.feePercentage,
+            shippingFee: v.shippingFee,
+          })),
       }));
 
     const paymentMethods = platform?.paymentMethods ?? [];
@@ -263,21 +292,34 @@ export default function PlatformFormModal({
                                 type="text"
                                 inputMode="decimal"
                                 value={
-                                  Number.isFinite(vs.feePercentage)
+                                  vs.feeInput ??
+                                  (Number.isFinite(vs.feePercentage)
                                     ? String(vs.feePercentage)
-                                    : ""
+                                    : "")
                                 }
                                 onChange={(e) => {
-                                  const v = sanitizeNumericInput(e.target.value);
+                                  // 入力中は文字列として保持し、小数点もそのまま許可
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
-                                    "feePercentage",
-                                    v,
+                                    "feeInput",
+                                    e.target.value,
                                   );
                                 }}
                                 onBlur={(e) => {
-                                  const normalized = normalizeNumericValue(e.target.value);
+                                  const raw = e.target.value.trim();
+                                  const normalized = normalizeNumericValue(raw);
+                                  if (raw !== "" && normalized === "") {
+                                    // 数値として解釈できない場合はエラー表示のみ
+                                    handleItemVariantChange(
+                                      index,
+                                      vs.variantType,
+                                      "feeError",
+                                      "数値を入力してください",
+                                    );
+                                    return;
+                                  }
+                                  // 正常な場合は 0.1 単位に正規化して保存
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
@@ -287,6 +329,9 @@ export default function PlatformFormModal({
                                 }}
                                 placeholder="例：10"
                               />
+                              {vs.feeError && (
+                                <p className="text-[11px] text-red-500 mt-0.5">{vs.feeError}</p>
+                              )}
                             </div>
                             <div className="flex-1 space-y-1">
                               <Label className="text-[11px] text-muted-foreground">
@@ -296,21 +341,31 @@ export default function PlatformFormModal({
                                 type="text"
                                 inputMode="numeric"
                                 value={
-                                  Number.isFinite(vs.shippingFee)
+                                  vs.shippingInput ??
+                                  (Number.isFinite(vs.shippingFee)
                                     ? String(vs.shippingFee)
-                                    : ""
+                                    : "")
                                 }
                                 onChange={(e) => {
-                                  const v = sanitizeNumericInput(e.target.value);
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
-                                    "shippingFee",
-                                    v,
+                                    "shippingInput",
+                                    e.target.value,
                                   );
                                 }}
                                 onBlur={(e) => {
-                                  const normalized = normalizeNumericValue(e.target.value);
+                                  const raw = e.target.value.trim();
+                                  const normalized = normalizeNumericValue(raw);
+                                  if (raw !== "" && normalized === "") {
+                                    handleItemVariantChange(
+                                      index,
+                                      vs.variantType,
+                                      "shippingError",
+                                      "数値を入力してください",
+                                    );
+                                    return;
+                                  }
                                   handleItemVariantChange(
                                     index,
                                     vs.variantType,
@@ -320,6 +375,11 @@ export default function PlatformFormModal({
                                 }}
                                 placeholder="例：100"
                               />
+                              {vs.shippingError && (
+                                <p className="text-[11px] text-red-500 mt-0.5">
+                                  {vs.shippingError}
+                                </p>
+                              )}
                             </div>
                           </div>
                         ))}
