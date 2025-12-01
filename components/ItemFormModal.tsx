@@ -15,6 +15,8 @@ import { Plus, Trash2 } from "lucide-react";
 export interface ItemVariant {
   type: string;
   price: number;
+  // 販売種別ごとの取り扱い開始月（YYYY-MM）
+  startMonth?: string;
 }
 
 export interface Item {
@@ -22,6 +24,8 @@ export interface Item {
   name: string;
   variants: ItemVariant[];
   archived?: boolean;
+  // 商品全体の販売開始日
+  startDate?: Date | null;
   // 販路ごとの設定（任意）
   platformSettings?: {
     platformId: string;
@@ -55,16 +59,26 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
   const [name, setName] = useState("");
   const [variants, setVariants] = useState<ItemVariant[]>([{ type: "", price: 0 }]);
   const [archived, setArchived] = useState(false);
+  const [startDateInput, setStartDateInput] = useState<string>("");
 
   useEffect(() => {
     if (item) {
       setName(item.name);
       setVariants(item.variants.length > 0 ? item.variants : [{ type: "", price: 0 }]);
       setArchived(Boolean(item.archived));
+      if (item.startDate instanceof Date) {
+        const y = item.startDate.getFullYear();
+        const m = String(item.startDate.getMonth() + 1).padStart(2, "0");
+        const d = String(item.startDate.getDate()).padStart(2, "0");
+        setStartDateInput(`${y}-${m}-${d}`);
+      } else {
+        setStartDateInput("");
+      }
     } else {
       setName("");
       setVariants([{ type: "", price: 0 }]);
       setArchived(false);
+      setStartDateInput("");
     }
   }, [item, open]);
 
@@ -82,19 +96,24 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
     const newVariants = [...variants];
     if (field === "type") {
       newVariants[index].type = value as string;
-    } else {
+    } else if (field === "price") {
       newVariants[index].price = typeof value === "string" ? Number(value) : value;
+    } else if (field === "startMonth") {
+      newVariants[index].startMonth = value as string;
     }
     setVariants(newVariants);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const startDate =
+      startDateInput && startDateInput.length >= 10 ? new Date(startDateInput) : null;
     onSubmit({
       id: item?.id,
       name,
       variants: variants.filter((v) => v.type && v.price > 0),
       archived,
+      startDate,
     });
     onOpenChange(false);
   };
@@ -119,6 +138,15 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
                 placeholder="例：イラスト集 Vol.1"
                 required
                 data-testid="input-item-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="startDate">販売開始日</Label>
+              <Input
+                id="startDate"
+                type="date"
+                value={startDateInput}
+                onChange={(e) => setStartDateInput(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -150,47 +178,63 @@ export default function ItemFormModal({ open, onOpenChange, item, onSubmit }: It
               
               <div className="space-y-3">
                 {variants.map((variant, index) => (
-                  <div key={index} className="flex gap-2 items-start">
-                    <div className="flex-1">
+                  <div key={index} className="space-y-2 border rounded-md p-2">
+                    <div className="flex gap-2 items-start">
+                      <div className="flex-1">
+                        <Input
+                          value={variant.type}
+                          onChange={(e) => handleVariantChange(index, "type", e.target.value)}
+                          placeholder="例：紙、電子版"
+                          required
+                          data-testid={`input-variant-type-${index}`}
+                        />
+                      </div>
+                      <div className="w-32">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={variant.price === 0 ? "" : String(variant.price)}
+                          onChange={(e) => {
+                            const v = sanitizeNumericInput(e.target.value);
+                            const num = v === "" ? 0 : Number(v);
+                            handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
+                          }}
+                          onBlur={(e) => {
+                            const normalized = normalizeNumericValue(e.target.value);
+                            const num = normalized === "" ? 0 : Number(normalized);
+                            handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
+                          }}
+                          placeholder="価格"
+                          required
+                          data-testid={`input-variant-price-${index}`}
+                        />
+                      </div>
+                      {variants.length > 1 && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleRemoveVariant(index)}
+                          data-testid={`button-remove-variant-${index}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`variant-start-month-${index}`} className="w-24 text-xs">
+                        取り扱い開始月
+                      </Label>
                       <Input
-                        value={variant.type}
-                        onChange={(e) => handleVariantChange(index, "type", e.target.value)}
-                        placeholder="例：紙、電子版"
-                        required
-                        data-testid={`input-variant-type-${index}`}
+                        id={`variant-start-month-${index}`}
+                        type="month"
+                        className="h-8 text-sm"
+                        value={variant.startMonth ?? ""}
+                        onChange={(e) =>
+                          handleVariantChange(index, "startMonth", e.target.value)
+                        }
                       />
                     </div>
-                    <div className="w-32">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={variant.price === 0 ? "" : String(variant.price)}
-                        onChange={(e) => {
-                          const v = sanitizeNumericInput(e.target.value);
-                          const num = v === "" ? 0 : Number(v);
-                          handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
-                        }}
-                        onBlur={(e) => {
-                          const normalized = normalizeNumericValue(e.target.value);
-                          const num = normalized === "" ? 0 : Number(normalized);
-                          handleVariantChange(index, "price", Number.isFinite(num) ? num : 0);
-                        }}
-                        placeholder="価格"
-                        required
-                        data-testid={`input-variant-price-${index}`}
-                      />
-                    </div>
-                    {variants.length > 1 && (
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleRemoveVariant(index)}
-                        data-testid={`button-remove-variant-${index}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
                   </div>
                 ))}
               </div>

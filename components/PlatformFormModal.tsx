@@ -44,7 +44,10 @@ interface PlatformFormModalProps {
     id: string;
     name: string;
     archived?: boolean;
-    variants?: { type: string; price: number }[];
+    variants?: { type: string; price: number; startMonth?: string }[];
+    // アイテム全体の取り扱い開始日・作成日（ソート用）
+    startDate?: Date | null;
+    createdAt?: any;
   }[];
   onSubmit: (platform: Omit<Platform, "id"> & { id?: string }) => void;
 }
@@ -77,15 +80,36 @@ export default function PlatformFormModal({
   const [itemSettings, setItemSettings] = useState<PlatformItemSetting[]>([]);
   const [newItemId, setNewItemId] = useState<string>("");
 
+  const getItemTime = (itemId: string) => {
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return 0;
+    if (item.startDate instanceof Date && !Number.isNaN(item.startDate.getTime())) {
+      return item.startDate.getTime();
+    }
+    const createdAt = item.createdAt as any;
+    if (createdAt?.toDate) {
+      const d = createdAt.toDate();
+      return d instanceof Date && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+    }
+    if (createdAt instanceof Date && !Number.isNaN(createdAt.getTime())) {
+      return createdAt.getTime();
+    }
+    return 0;
+  };
+
+  const sortItemSettingsByDateDesc = (settings: PlatformItemSetting[]) => {
+    return [...settings].sort((a, b) => getItemTime(b.itemId) - getItemTime(a.itemId));
+  };
+
   useEffect(() => {
     if (platform) {
       setName(platform.name);
-      setItemSettings(platform.itemSettings ?? []);
+      setItemSettings(sortItemSettingsByDateDesc(platform.itemSettings ?? []));
     } else {
       setName("");
       setItemSettings([]);
     }
-  }, [platform, open]);
+  }, [platform, open, items]);
 
   const handleAddItemSetting = () => {
     if (!newItemId) return;
@@ -105,12 +129,14 @@ export default function PlatformFormModal({
             },
           ];
 
-    setItemSettings([...itemSettings, { itemId: newItemId, variants: variantSettings }]);
+    const next = [...itemSettings, { itemId: newItemId, variants: variantSettings }];
+    setItemSettings(sortItemSettingsByDateDesc(next));
     setNewItemId("");
   };
 
   const handleRemoveItemSetting = (index: number) => {
-    setItemSettings(itemSettings.filter((_, i) => i !== index));
+    const next = itemSettings.filter((_, i) => i !== index);
+    setItemSettings(sortItemSettingsByDateDesc(next));
   };
 
   const handleItemVariantChange = (
@@ -183,9 +209,20 @@ export default function PlatformFormModal({
     .map((s) => s.itemId)
     .filter((id): id is string => Boolean(id));
 
-  const availableItemsForAdd = items.filter(
-    (it) => !it.archived && !usedItemIds.includes(it.id),
-  );
+  const availableItemsForAdd = items
+    .filter((it) => !it.archived && !usedItemIds.includes(it.id))
+    // 取り扱い開始日の新しいものから順に表示
+    .sort((a, b) => {
+      const timeA =
+        a.startDate instanceof Date && !Number.isNaN(a.startDate.getTime())
+          ? a.startDate.getTime()
+          : 0;
+      const timeB =
+        b.startDate instanceof Date && !Number.isNaN(b.startDate.getTime())
+          ? b.startDate.getTime()
+          : 0;
+      return timeB - timeA;
+    });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

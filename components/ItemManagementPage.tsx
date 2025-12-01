@@ -46,21 +46,46 @@ export default function ItemManagementPage() {
         const fetched: Item[] = snap.docs
           .map((d) => {
             const data = d.data() as any;
+            const createdAt = data.createdAt;
+            const startDateRaw = data.startDate;
+            let startDate: Date | null = null;
+            if (startDateRaw?.toDate) {
+              startDate = startDateRaw.toDate();
+            } else if (startDateRaw instanceof Date) {
+              startDate = startDateRaw;
+            } else if (typeof startDateRaw === "string") {
+              const parsed = new Date(startDateRaw);
+              if (!Number.isNaN(parsed.getTime())) {
+                startDate = parsed;
+              }
+            }
             return {
               id: d.id,
               name: data.name,
               variants: data.variants ?? [],
               archived: data.archived ?? false,
-              createdAt: data.createdAt,
+              createdAt,
+              startDate,
             } as any;
           })
           .sort((a: any, b: any) => {
-            const aTime =
-              a.createdAt?.toDate?.()?.getTime?.() ??
-              (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
-            const bTime =
-              b.createdAt?.toDate?.()?.getTime?.() ??
-              (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+            // 取り扱い開始日の新しいものから並べる（降順）
+            const getTime = (item: any) => {
+              if (item.startDate instanceof Date && !Number.isNaN(item.startDate.getTime())) {
+                return item.startDate.getTime();
+              }
+              const createdAt = item.createdAt;
+              if (createdAt?.toDate) {
+                const d = createdAt.toDate();
+                return d instanceof Date && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+              }
+              if (createdAt instanceof Date && !Number.isNaN(createdAt.getTime())) {
+                return createdAt.getTime();
+              }
+              return 0;
+            };
+            const aTime = getTime(a);
+            const bTime = getTime(b);
             return bTime - aTime;
           })
           .map((item) => ({
@@ -68,6 +93,7 @@ export default function ItemManagementPage() {
             name: item.name,
             variants: item.variants,
             archived: item.archived ?? false,
+            startDate: item.startDate ?? null,
           }));
         setItems(fetched);
       } finally {
@@ -124,6 +150,7 @@ export default function ItemManagementPage() {
           name: itemData.name,
           variants: itemData.variants,
           archived: itemData.archived ?? false,
+          startDate: itemData.startDate ?? null,
           updatedAt: serverTimestamp(),
         });
         setItems(
@@ -141,6 +168,7 @@ export default function ItemManagementPage() {
           name: itemData.name,
           variants: itemData.variants,
           archived: itemData.archived ?? false,
+          startDate: itemData.startDate ?? null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

@@ -40,7 +40,9 @@ export default function SalesChannelPage() {
       name: string;
       archived?: boolean;
       platformSettings?: any[];
-      variants?: { type: string; price: number }[];
+      variants?: { type: string; price: number; startMonth?: string }[];
+      startDate?: Date | null;
+      createdAt?: any;
     }[]
   >([]);
 
@@ -80,16 +82,56 @@ export default function SalesChannelPage() {
           paymentMethods: p.paymentMethods,
         }));
 
-      const fetchedItems = itemSnap.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          name: data.name,
-          archived: data.archived ?? false,
-          platformSettings: data.platformSettings ?? [],
-          variants: data.variants ?? [],
-        };
-      });
+      const fetchedItems = itemSnap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          const createdAt = data.createdAt;
+          const startDateRaw = data.startDate;
+          let startDate: Date | null = null;
+          if (startDateRaw?.toDate) {
+            startDate = startDateRaw.toDate();
+          } else if (startDateRaw instanceof Date) {
+            startDate = startDateRaw;
+          } else if (typeof startDateRaw === "string") {
+            const parsed = new Date(startDateRaw);
+            if (!Number.isNaN(parsed.getTime())) {
+              startDate = parsed;
+            }
+          }
+          return {
+            id: d.id,
+            name: data.name,
+            archived: data.archived ?? false,
+            platformSettings: data.platformSettings ?? [],
+            variants: (data.variants ?? []).map((v: any) => ({
+              type: v.type,
+              price: v.price,
+              startMonth: v.startMonth,
+            })),
+            createdAt,
+            startDate,
+          };
+        })
+        .sort((a, b) => {
+          // 取り扱い開始日の新しいものから並べる（降順）
+          const getTime = (item: any) => {
+            if (item.startDate instanceof Date && !Number.isNaN(item.startDate.getTime())) {
+              return item.startDate.getTime();
+            }
+            const createdAt = item.createdAt;
+            if (createdAt?.toDate) {
+              const d = createdAt.toDate();
+              return d instanceof Date && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+            }
+            if (createdAt instanceof Date && !Number.isNaN(createdAt.getTime())) {
+              return createdAt.getTime();
+            }
+            return 0;
+          };
+          const aTime = getTime(a);
+          const bTime = getTime(b);
+          return bTime - aTime;
+        });
 
       setPlatforms(fetchedPlatforms);
       setItems(fetchedItems);

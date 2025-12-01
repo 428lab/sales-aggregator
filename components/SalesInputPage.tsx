@@ -23,6 +23,8 @@ interface ItemVariant {
   type: string;
   basePrice: number;
   requiresShipping: boolean;
+  // この販売種別の取り扱い開始月（YYYY-MM）
+  startMonth?: string;
 }
 
 interface Item {
@@ -36,6 +38,8 @@ interface Item {
     feePercentage: number;
     shippingFee: number;
   }[];
+  // 商品全体の販売開始月（startDate から算出）
+  startMonth?: string;
 }
 
 interface Platform {
@@ -135,6 +139,18 @@ export default function SalesInputPage() {
       const itemsSnap = await getDocs(query(itemsRef, where("ownerUid", "==", user.uid)));
       const loadedItems: Item[] = itemsSnap.docs.map((d) => {
         const data = d.data() as any;
+        // 商品レベルの販売開始日から YYYY-MM を算出
+        let itemStartMonth: string | undefined;
+        const startDateRaw = data.startDate;
+        if (startDateRaw?.toDate) {
+          const dt = startDateRaw.toDate();
+          itemStartMonth = formatMonthValue(dt.getFullYear(), dt.getMonth() + 1);
+        } else if (startDateRaw instanceof Date) {
+          itemStartMonth = formatMonthValue(startDateRaw.getFullYear(), startDateRaw.getMonth() + 1);
+        } else if (typeof startDateRaw === "string" && /^\d{4}-\d{2}/.test(startDateRaw)) {
+          itemStartMonth = startDateRaw.slice(0, 7);
+        }
+
         return {
           id: d.id,
           name: data.name,
@@ -144,8 +160,19 @@ export default function SalesInputPage() {
             type: v.type,
             basePrice: typeof v.price === "number" ? v.price : Number(v.basePrice ?? 0),
             requiresShipping: v.requiresShipping ?? true,
+            startMonth: v.startMonth ?? itemStartMonth,
           })),
+          startMonth: itemStartMonth,
         };
+      });
+      // アイテムは取り扱い開始の新しいものから（降順）
+      loadedItems.sort((a, b) => {
+        const aKey = a.startMonth ?? "0000-00";
+        const bKey = b.startMonth ?? "0000-00";
+        if (aKey === bKey) {
+          return a.name.localeCompare(b.name);
+        }
+        return bKey.localeCompare(aKey);
       });
       setItems(loadedItems);
 
@@ -228,6 +255,14 @@ export default function SalesInputPage() {
     return settings.some(
       (s) => s.platformId === platformId && (!s.variantType || s.variantType === variantType),
     );
+  };
+
+  // 選択中の月において、この販売種別が表示対象かどうか
+  const isVariantActiveInMonth = (item: Item, variant: ItemVariant, month: string) => {
+    const effectiveStart = variant.startMonth ?? item.startMonth;
+    if (!effectiveStart || effectiveStart.length < 7) return true;
+    // "YYYY-MM" 形式同士なので文字列比較で大小判定可能
+    return month >= effectiveStart;
   };
 
   const columnTotals = useMemo(() => {
@@ -521,15 +556,27 @@ export default function SalesInputPage() {
               <tbody>
                 {items
                   .filter((item) => !item.archived)
-                  .flatMap((item, itemIdx) =>
-                    item.variants.map((variant, variantIdx) => (
+                  .flatMap((item, itemIdx) => {
+                    const activeVariants = item.variants
+                      .filter((variant) => isVariantActiveInMonth(item, variant, selectedMonth))
+                      // 販売種別は取り扱い開始の古いものから（昇順）
+                      .sort((a, b) => {
+                        const aKey = a.startMonth ?? item.startMonth ?? "9999-99";
+                        const bKey = b.startMonth ?? item.startMonth ?? "9999-99";
+                        if (aKey === bKey) {
+                          return a.type.localeCompare(b.type);
+                        }
+                        return aKey.localeCompare(bKey);
+                      });
+                    if (activeVariants.length === 0) return [];
+                    return activeVariants.map((variant, variantIdx) => (
                       <tr
                         key={`${item.id}-${variant.type}`}
                         className={`border-b border-gray-100 ${itemIdx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
                       >
                         {variantIdx === 0 && (
                           <td
-                            rowSpan={item.variants.length}
+                            rowSpan={activeVariants.length}
                             className="sticky left-0 z-10 px-3 py-1.5 font-medium text-gray-900 align-top border-r border-gray-200"
                             style={{ backgroundColor: itemIdx % 2 === 0 ? "white" : "rgb(249 250 251 / 0.5)" }}
                           >
@@ -578,8 +625,8 @@ export default function SalesInputPage() {
                           );
                         })}
                       </tr>
-                    )),
-                  )}
+                    ));
+                  })}
               </tbody>
               <tfoot className="bg-gray-50 border-t border-gray-200">
                 <tr>
