@@ -18,15 +18,22 @@ import {
   where,
 } from "@/lib/firebaseClient";
 import { useAuth } from "@/components/AuthProvider";
+import { Input } from "@/components/ui/input";
 
 interface SaleDoc {
   itemId: string;
   itemName?: string;
   variantType: string;
   quantity: number;
+  basePrice: number;
+  feePercentage: number;
+  shippingFee: number;
   totalAmount: number;
   saleDate: Date;
   month?: string;
+  subtotal: number;
+  charges: number;
+  payout: number;
 }
 
 interface ItemStatRow {
@@ -41,6 +48,10 @@ export default function AnalyticsPage() {
   const [sales, setSales] = useState<SaleDoc[]>([]);
   const [itemsCount, setItemsCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"year" | "range">("year");
+  const [selectedYear, setSelectedYear] = useState<string>("");
+  const [rangeStart, setRangeStart] = useState<string>("");
+  const [rangeEnd, setRangeEnd] = useState<string>("");
 
   useEffect(() => {
     if (!user) return;
@@ -58,14 +69,31 @@ export default function AnalyticsPage() {
       const s: SaleDoc[] = salesSnap.docs.map((d) => {
         const data = d.data() as any;
         const saleDate: Date = data.saleDate instanceof Date ? data.saleDate : data.saleDate?.toDate?.() ?? new Date();
+        const quantity: number = data.quantity ?? 0;
+        const basePrice: number = typeof data.basePrice === "number" ? data.basePrice : 0;
+        const feePercentage: number = typeof data.feePercentage === "number" ? data.feePercentage : 0;
+        const shippingFee: number = typeof data.shippingFee === "number" ? data.shippingFee : 0;
+        const totalAmount: number = data.totalAmount ?? 0;
+
+        const computedSubtotal = basePrice > 0 ? basePrice * quantity : totalAmount;
+        const rawCharges = totalAmount - computedSubtotal;
+        const computedCharges = rawCharges > 0 ? rawCharges : 0;
+        const computedPayout = computedSubtotal - computedCharges;
+
         return {
           itemId: data.itemId,
           itemName: data.itemName,
           variantType: data.variantType,
-          quantity: data.quantity ?? 0,
-          totalAmount: data.totalAmount ?? 0,
+          quantity,
+          basePrice,
+          feePercentage,
+          shippingFee,
+          totalAmount,
           saleDate,
           month: data.month,
+          subtotal: computedSubtotal,
+          charges: computedCharges,
+          payout: computedPayout,
         };
       });
       setSales(s);
@@ -77,14 +105,136 @@ export default function AnalyticsPage() {
     });
   }, [user]);
 
+  const availableYears = useMemo(() => {
+    const years = Array.from(
+      new Set(
+        sales.map((s) => s.saleDate.getFullYear()).filter((y) => !Number.isNaN(y)),
+      ),
+    );
+    years.sort((a, b) => b - a);
+    return years;
+  }, [sales]);
+
+  useEffect(() => {
+    if (!selectedYear && availableYears.length > 0) {
+      setSelectedYear(String(availableYears[0]));
+    }
+  }, [availableYears, selectedYear]);
+
+  const filteredSales: SaleDoc[] = useMemo(() => {
+    if (!sales.length) return [];
+
+    if (viewMode === "year") {
+      if (!selectedYear) return sales;
+      return sales.filter(
+        (s) => s.saleDate.getFullYear().toString() === selectedYear,
+      );
+    }
+
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+    if (rangeStart) {
+      startDate = new Date(rangeStart);
+    }
+    if (rangeEnd) {
+      const raw = new Date(rangeEnd);
+      endDate = new Date(
+        raw.getFullYear(),
+        raw.getMonth(),
+        raw.getDate(),
+        23,
+        59,
+        59,
+        999,
+      );
+    }
+
+    return sales.filter((s) => {
+      const t = s.saleDate.getTime();
+      if (startDate && t < startDate.getTime()) return false;
+      if (endDate && t > endDate.getTime()) return false;
+      return true;
+    });
+  }, [sales, viewMode, selectedYear, rangeStart, rangeEnd]);
+
+  const { rangeStartDate, rangeEndDate } = useMemo(() => {
+    if (viewMode === "year") {
+      if (selectedYear) {
+        const y = Number(selectedYear);
+        if (!Number.isNaN(y)) {
+          return {
+            rangeStartDate: new Date(y, 0, 1),
+            rangeEndDate: new Date(y, 11, 31),
+          };
+        }
+      }
+    } else {
+      if (rangeStart && rangeEnd) {
+        const start = new Date(rangeStart);
+        const rawEnd = new Date(rangeEnd);
+        const end = new Date(
+          rawEnd.getFullYear(),
+          rawEnd.getMonth(),
+          rawEnd.getDate(),
+          23,
+          59,
+          59,
+          999,
+        );
+        return { rangeStartDate: start, rangeEndDate: end };
+      }
+    }
+
+    if (!filteredSales.length) {
+      return { rangeStartDate: undefined, rangeEndDate: undefined } as {
+        rangeStartDate: Date | undefined;
+        rangeEndDate: Date | undefined;
+      };
+    }
+
+    const sorted = [...filteredSales].sort(
+      (a, b) => a.saleDate.getTime() - b.saleDate.getTime(),
+    );
+    return {
+      rangeStartDate: sorted[0].saleDate,
+      rangeEndDate: sorted[sorted.length - 1].saleDate,
+    };
+  }, [viewMode, selectedYear, rangeStart, rangeEnd, filteredSales]);
+
+  const buildMonthKeys = useMemo(() => {
+    if (!rangeStartDate || !rangeEndDate) return [] as string[];
+
+    const keys: string[] = [];
+    const current = new Date(
+      rangeStartDate.getFullYear(),
+      rangeStartDate.getMonth(),
+      1,
+    );
+    const last = new Date(
+      rangeEndDate.getFullYear(),
+      rangeEndDate.getMonth(),
+      1,
+    );
+
+    while (current <= last) {
+      const key = `${current.getFullYear()}-${String(
+        current.getMonth() + 1,
+      ).padStart(2, "0")}`;
+      keys.push(key);
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    return keys;
+  }, [rangeStartDate, rangeEndDate]);
+
   const mockItemStats: ItemStatRow[] = useMemo(() => {
     const map = new Map<string, { totalSales: number; revenue: number; totalPrice: number }>();
-    sales.forEach((s) => {
+    filteredSales.forEach((s) => {
       const name = `${s.itemName ?? s.itemId}（${s.variantType}）`;
       const current = map.get(name) ?? { totalSales: 0, revenue: 0, totalPrice: 0 };
       current.totalSales += s.quantity;
-      current.revenue += s.totalAmount;
-      current.totalPrice += s.totalAmount; // ざっくり平均単価用
+      current.revenue += s.subtotal;
+      current.totalPrice += s.subtotal;
       map.set(name, current);
     });
     return Array.from(map.entries()).map(([name, v]) => ({
@@ -93,28 +243,38 @@ export default function AnalyticsPage() {
       revenue: v.revenue,
       averagePrice: v.totalSales ? Math.round(v.totalPrice / v.totalSales) : 0,
     }));
-  }, [sales]);
+  }, [filteredSales]);
 
   const mockSalesData = useMemo(
     () => {
       const map = new Map<string, { sales: number; revenue: number }>();
-      sales.forEach((s) => {
+      filteredSales.forEach((s) => {
         const d = s.saleDate;
         const key = s.month ?? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         const current = map.get(key) ?? { sales: 0, revenue: 0 };
         current.sales += s.quantity;
-        current.revenue += s.totalAmount;
+        current.revenue += s.payout;
         map.set(key, current);
       });
-      return Array.from(map.entries())
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([month, v]) => ({ month, sales: v.sales, revenue: v.revenue }));
+
+      if (!buildMonthKeys.length) {
+        return Array.from(map.entries())
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([month, v]) => ({ month, sales: v.sales, revenue: v.revenue }));
+      }
+
+      return buildMonthKeys.map((key) => {
+        const v = map.get(key) ?? { sales: 0, revenue: 0 };
+        return { month: key, sales: v.sales, revenue: v.revenue };
+      });
     },
-    [sales],
+    [filteredSales, buildMonthKeys],
   );
 
   const totalSales = mockItemStats.reduce((sum, item) => sum + item.totalSales, 0);
-  const totalRevenue = mockItemStats.reduce((sum, item) => sum + item.revenue, 0);
+  const totalRevenue = filteredSales.reduce((sum, s) => sum + s.subtotal, 0);
+  const totalCharges = filteredSales.reduce((sum, s) => sum + s.charges, 0);
+  const totalPayout = filteredSales.reduce((sum, s) => sum + s.payout, 0);
   const totalItems = itemsCount;
 
   return (
@@ -129,10 +289,83 @@ export default function AnalyticsPage() {
       )}
       <div>
         <h1 className="text-2xl font-bold">売上集計</h1>
-        <p className="text-muted-foreground">過去の累計販売数と金額を可視化します</p>
+        <p className="text-muted-foreground">期間を指定して売上・経費・実収入を可視化します</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">表示期間</CardTitle>
+          <CardDescription>
+            年単位または任意の期間で集計対象を切り替えできます
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setViewMode("year")}
+                className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
+                  viewMode === "year"
+                    ? "bg-background text-foreground shadow-sm"
+                    : ""
+                }`}
+              >
+                年間
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("range")}
+                className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
+                  viewMode === "range"
+                    ? "bg-background text-foreground shadow-sm"
+                    : ""
+                }`}
+              >
+                任意期間
+              </button>
+            </div>
+
+            {viewMode === "year" && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">年を選択</span>
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                >
+                  {availableYears.map((y) => (
+                    <option key={y} value={y}>
+                      {y}年
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {viewMode === "range" && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">開始日</span>
+                <Input
+                  type="date"
+                  className="h-8 w-40"
+                  value={rangeStart}
+                  onChange={(e) => setRangeStart(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">終了日</span>
+                <Input
+                  type="date"
+                  className="h-8 w-40"
+                  value={rangeEnd}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">総販売数</CardTitle>
@@ -148,14 +381,27 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">総売上</CardTitle>
+            <CardTitle className="text-sm font-medium">売上合計（小計）</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-revenue">
               ¥{totalRevenue.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">手数料控除前</p>
+            <p className="text-xs text-muted-foreground mt-1">単価×数量の合計（手数料・送料含まず）</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">実収入合計</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              ¥{totalPayout.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">手数料・送料控除後</p>
           </CardContent>
         </Card>
 
@@ -172,9 +418,9 @@ export default function AnalyticsPage() {
       </div>
 
       <Card>
-          <CardHeader>
-          <CardTitle>月別売上推移</CardTitle>
-          <CardDescription>過去3ヶ月の売上数と金額の推移</CardDescription>
+        <CardHeader>
+          <CardTitle>月別推移</CardTitle>
+          <CardDescription>選択した期間内の販売数と実収入の推移</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
@@ -186,7 +432,7 @@ export default function AnalyticsPage() {
               <Tooltip />
               <Legend />
               <Bar yAxisId="left" dataKey="sales" fill="hsl(var(--chart-1))" name="販売数" />
-              <Bar yAxisId="right" dataKey="revenue" fill="hsl(var(--chart-2))" name="売上 (円)" />
+              <Bar yAxisId="right" dataKey="revenue" fill="hsl(var(--chart-2))" name="実収入 (円)" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
